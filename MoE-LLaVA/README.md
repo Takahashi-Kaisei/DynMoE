@@ -25,6 +25,42 @@ flash attentionはpending
 > </b>
 > </div>
 
+### 原論文の設定に準拠する場合
+### ⚙️ Requirements and Installation
+We recommend the requirements as follows.
+* Python == 3.10
+* Pytorch == 2.0.1
+* CUDA Version >= 11.7
+* **Transformers == 4.37.0**
+* **Tokenizers==0.15.1**
+* Install required packages with [uv](https://docs.astral.sh/uv/):
+```bash
+git clone https://github.com/PKU-YuanGroup/MoE-LLaVA
+cd MoE-LLaVA
+uv python install 3.10
+uv venv --python 3.10
+source .venv/bin/activate
+
+uv pip install -e .
+uv pip install -e ".[train]"
+uv pip install flash-attn --no-build-isolation
+uv pip install ../DeepSpeed-0.9.5/ # !!! install DynMoE-customized version !!!
+
+# Below are optional. For Qwen model.
+git clone https://github.com/Dao-AILab/flash-attention
+cd flash-attention
+uv pip install .
+```
+
+The DynMoE-customized DeepSpeed install should be run from the DynMoE repository layout where `DeepSpeed-0.9.5/` is next to `MoE-LLaVA/`.
+
+> [!Warning]
+> <div align="left">
+> <b>
+> 🚨 We find that using flash attention2 makes performance degradation.
+> </b>
+> </div>
+
 ## 🗝️ Training & Validating
 The training & validating instruction is in [TRAIN.md](docs/TRAIN.md) & [EVAL.md](docs/EVAL.md).
 
