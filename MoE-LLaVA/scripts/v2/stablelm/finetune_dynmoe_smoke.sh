@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+moe_mode="sparse"
+num_experts=4
+top_k_experts=-1
+max_expert_num=${num_experts}
+use_residual=False
+router_aux_loss_coef=0.01
+
+APP="/usr/src/app"
+DATASET_DIR="${APP}/data/raw/MoE-LLaVA-unzipped"
+
+JSON_FOLDER="${DATASET_DIR}/train_json"
+IMAGE_FOLDER="${DATASET_DIR}"
+
+cd "${APP}/DynMoE/MoE-LLaVA"
+uv pip install "../DeepSpeed-0.9.5"
+
+
+HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run deepspeed --num_gpus=8 --enable_each_rank_log ./rank_logs moellava/train/train.py \
+  --moe_enable True \
+  --num_experts ${num_experts} \
+  --max_expert_num ${max_expert_num} \
+  --top_k_experts ${top_k_experts} \
+  --capacity_factor 1.5 \
+  --moe_mode ${moe_mode} \
+  --use_residual ${use_residual} \
+  --router_aux_loss_coef ${router_aux_loss_coef} \
+  --train_modules gate_proj up_proj down_proj wg \
+  --deepspeed ./scripts/zero2.json \
+  --model_name_or_path ./checkpoints/MoE-LLaVA-StableLM-Stage2 \
+  --version stablelm \
+  --data_path ${JSON_FOLDER}/llava_image_tune_.json ${JSON_FOLDER}/nlp_tune.json \
+  --image_folder ${IMAGE_FOLDER} \
+  --image_tower openai/clip-vit-large-patch14-336 \
+  --image_projector_type mlp2x_gelu \
+  --mm_vision_select_layer -2 \
+  --mm_use_im_start_end False \
+  --mm_use_im_patch_token False \
+  --image_aspect_ratio pad \
+  --group_by_modality_length False \
+  --bf16 True \
+  --output_dir ./checkpoints/smoke-dynmoe \
+  --num_train_epochs 1 \
+  --max_steps 3 \
+  --per_device_train_batch_size 1 \
+  --per_device_eval_batch_size 1 \
+  --gradient_accumulation_steps 1 \
+  --evaluation_strategy "no" \
+  --save_strategy "no" \
+  --learning_rate 2e-5 \
+  --weight_decay 0. \
+  --warmup_ratio 0.03 \
+  --lr_scheduler_type "cosine" \
+  --logging_steps 1 \
+  --tf32 True \
+  --model_max_length 1024 \
+  --gradient_checkpointing False \
+  --dataloader_num_workers 0 \
+  --lazy_preprocess True \
+  --report_to none \
+  --cache_dir "./cache_dir"
