@@ -4,3 +4,4 @@ checkpoints/
 moellava.egg-info/
 openai/
 rank_logs/
+eval/
