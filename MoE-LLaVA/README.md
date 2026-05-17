@@ -11,25 +11,17 @@ We recommend the requirements as follows.
 * **Tokenizers==0.15.1**
 * Install required packages:
 ```bash
-git clone https://github.com/PKU-YuanGroup/MoE-LLaVA
 cd MoE-LLaVA
-conda create -n moellava python=3.10 -y
-conda activate moellava
-pip install --upgrade pip  # enable PEP 660 support
-pip install -e .
-pip install -e ".[train]"
-pip install flash-attn --no-build-isolation
-pip install ../Deepspeed-0.9.5/ # !!! install DynMoE-customized version !!!
-
-# Below are optional. For Qwen model.
-git clone https://github.com/Dao-AILab/flash-attention
-cd flash-attention && pip install .
+bash setup_moellava.sh
 ```
 
 > [!Warning]
 > <div align="left">
 > <b>
 > 🚨 We find that using flash attention2 makes performance degradation.
+>
+> flash-attentnionのソースを見に行くと、torchとのバージョンに乖離があった。一旦
+flash attentionはpending
 > </b>
 > </div>
 
