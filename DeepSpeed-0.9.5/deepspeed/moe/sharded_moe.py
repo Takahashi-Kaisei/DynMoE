@@ -471,7 +471,8 @@ def topanygating_opt(logits: Tensor, capacity_factor: float, min_capacity: int, 
 
     # mask_k = K > 0
     # gates[mask_k] = gates[mask_k] / K[mask_k].unsqueeze(1)
-    gates /= torch.clamp(K, min=1).unsqueeze(1)
+    # gates /= torch.clamp(K, min=1).unsqueeze(1)
+    gates = gates / torch.clamp(K, min=1).unsqueeze(1)
 
     locations1_sc = _one_hot_to_float(locations1_s, capacity + 1) # (sample, expert, capacity + 1) 
     combine_weights = einsum("se,sec->sec", gates, locations1_sc[:,:,:-1]) # (sample, expert, capacity)
