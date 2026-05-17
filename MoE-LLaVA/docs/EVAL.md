@@ -79,6 +79,32 @@ eval/
 ```
 
 
+## After placing `eval/`
+
+After you place `eval/` under `MoE-LLaVA`, the next steps are:
+
+1. Decide which checkpoint to evaluate and place it under `MoE-LLaVA/checkpoints/`.
+2. Prepare benchmark-specific extra data listed below. `eval.zip` alone is not enough for every benchmark.
+3. Open the corresponding script under `scripts/v2/eval/moe_llava/` and replace `CKPT_NAME="your_ckpt_name"` with your checkpoint name.
+4. Run the benchmark script from the `MoE-LLaVA` directory.
+5. Start with local-eval benchmarks such as ScienceQA, then expand to MME, SEED, and others.
+6. For submission-style benchmarks, verify that `answers_upload/` files are generated correctly.
+
+Recommended first order:
+
+- ScienceQA
+- MME
+- SEED
+- GQA / TextVQA / POPE
+- MMBench / VQAv2 / VizWiz / MM-Vet / LLaVA-Bench
+
+Example:
+
+```bash
+cd /usr/src/app/DynMoE/MoE-LLaVA
+bash scripts/v2/eval/moe_llava/sqa.sh
+```
+
 ## Validating
 Our image validation code comes from LLaVA, thanks for their contribution! 
 
