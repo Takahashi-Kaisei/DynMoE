@@ -1,26 +1,25 @@
 #!/bin/bash
+set -euo pipefail
 
 moe_mode="sparse"
-
 num_experts=4
 top_k_experts=-1
 max_expert_num=${num_experts}
-
 use_residual=False
 router_aux_loss_coef=0.01
 
-APP="/usr/src/app/"
+APP="/usr/src/app"
 DATASET_DIR="${APP}/data/raw/MoE-LLaVA-unzipped"
 
 JSON_FOLDER="${DATASET_DIR}/train_json"
-IMAGE_FOLDER="${DATASET_DIR}/llava_image_tune"
+IMAGE_FOLDER="${DATASET_DIR}"
 
-# Before running this script, make sure you have installed MoE-LLaVA and our modified Deepspeed
-# cd "path/to/MoE-LLaVA"
-# pip install "path/to/Deepspeed"
-# 上記については実行済み
+cd "${APP}/DynMoE/MoE-LLaVA"
+uv pip install "../DeepSpeed-0.9.5"
 
-HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 deepspeed moellava/train/train_mem.py \
+n_gpu=8
+
+HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 deepspeed --num_gpus=${n_gpu} --enable_each_rank_log ./rank_logs moellava/train/train_mem.py \
     --moe_enable True --num_experts ${num_experts} --max_expert_num ${max_expert_num} --top_k_experts ${top_k_experts} --capacity_factor 1.5 \
     --moe_mode ${moe_mode} --use_residual ${use_residual} --router_aux_loss_coef ${router_aux_loss_coef} \
     --train_modules gate_proj up_proj down_proj wg \

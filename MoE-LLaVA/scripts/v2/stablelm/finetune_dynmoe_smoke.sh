@@ -17,8 +17,9 @@ IMAGE_FOLDER="${DATASET_DIR}"
 cd "${APP}/DynMoE/MoE-LLaVA"
 uv pip install "../DeepSpeed-0.9.5"
 
+n_gpu=8
 
-HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run deepspeed --num_gpus=8 --enable_each_rank_log ./rank_logs moellava/train/train.py \
+HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run deepspeed --num_gpus=${n_gpu} --enable_each_rank_log ./rank_logs moellava/train/train_mem.py \
   --moe_enable True \
   --num_experts ${num_experts} \
   --max_expert_num ${max_expert_num} \
