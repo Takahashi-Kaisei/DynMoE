@@ -7,7 +7,7 @@ name = "moellava"
 version = "1.0.0"
 description = "Mixture-of-Experts for Large Vision-Language Models."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = "==3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
