@@ -387,7 +387,7 @@ def topanygating(logits: Tensor, capacity_factor: float, min_capacity: int, K: T
         pre_locations += torch.sum(mask, dim=0)
         locations.append(locationsk)
 
-    new_capacity = torch.max(pre_locations).to(logits.device).int() 
+    new_capacity = torch.max(pre_locations).to(logits.device).int()
     dist.all_reduce(new_capacity, op=dist.ReduceOp.MAX, group=dist.get_world_group())
     capacity = new_capacity
 
@@ -432,7 +432,7 @@ def topanygating(logits: Tensor, capacity_factor: float, min_capacity: int, K: T
     return l_aux, combine_weights, dispatch_mask, exp_counts
 
 def topanygating_opt(logits: Tensor, capacity_factor: float, min_capacity: int, K: Tensor, gate_tensor=None, expert_mask=None, ep_group=None) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
-    
+
     """Implements TopanyGating on logits."""
     gates = logits
     mask = gates.int()
@@ -461,7 +461,7 @@ def topanygating_opt(logits: Tensor, capacity_factor: float, min_capacity: int, 
         else:
             load_balance_loss = 0
         efficiency_loss = torch.mean(gates)
-        
+
         l_aux = diverse_and_simple_gate_loss(gate_tensor, expert_mask) \
                                             + load_balance_loss + efficiency_loss
 
@@ -474,7 +474,7 @@ def topanygating_opt(logits: Tensor, capacity_factor: float, min_capacity: int, 
     # gates /= torch.clamp(K, min=1).unsqueeze(1)
     gates = gates / torch.clamp(K, min=1).unsqueeze(1)
 
-    locations1_sc = _one_hot_to_float(locations1_s, capacity + 1) # (sample, expert, capacity + 1) 
+    locations1_sc = _one_hot_to_float(locations1_s, capacity + 1) # (sample, expert, capacity + 1)
     combine_weights = einsum("se,sec->sec", gates, locations1_sc[:,:,:-1]) # (sample, expert, capacity)
 
     dispatch_mask = combine_weights.bool()
@@ -512,7 +512,7 @@ class GAMoEGateT(torch.nn.Module):
 
         self.experts_mask.requires_grad_(False) # FIX ME
         self.experts_mask[:num_global_experts] = 1.0
-        
+
         self.fp32_gate = fp32_gate
         self.max_expert_num = max_expert_num
         self.adaptive_experts = adaptive_experts
@@ -525,13 +525,13 @@ class GAMoEGateT(torch.nn.Module):
         else:
             sim_matrix = self.sim_matrix
             gates = self.gates
-        
+
         logit_scale = torch.clamp(self.temperature, max=self.clamp_max).exp()
         logits = torch.sigmoid(torch.matmul(F.normalize(x, dim=1),
                               F.normalize(sim_matrix, dim=0)) * logit_scale)
         logits = logits * self.experts_mask
         gates = torch.sigmoid(self.gates * logit_scale)
-        
+
         if self.training:
             # print('gate forward in train')
             logits = F.relu(logits - gates)
@@ -542,14 +542,14 @@ class GAMoEGateT(torch.nn.Module):
             new_logits = F.relu(logits - gates)
             # If remove this, gating scores range will changed from {0, 1} to [0, x]
             new_logits = GAMoEGateBackward.apply(new_logits)
-            
+
             top_k = torch.sum(new_logits > 0, dim=1).to(torch.int)
 
             mask = (torch.sum(new_logits, dim=1) == 0).to(torch.int).repeat(logits.shape[1]).reshape(logits.shape[1], -1).T # s * e
             max_index = torch.argmax(logits, dim=1)
             one_hot = F.one_hot(max_index, num_classes=logits.shape[1])
             logits = mask * one_hot + new_logits
-            
+
             top_k = torch.max(top_k, torch.ones(top_k.shape).to(top_k.device)).to(torch.int)
 
         return logits, top_k
@@ -592,14 +592,14 @@ class TopKGate(Module):
         # Only top-1 and top-2 are supported at the moment.
         if k != 1 and k != 2 and k != -1:
             raise ValueError('Only top-1, top-2, and top-Any gatings are supported.')
-        
+
         # OURS
         self.k = k
         if k == 1 or k == 2:
             self.wg = torch.nn.Linear(model_dim, num_experts, bias=False).float()
         else:
             assert max_expert_num >= num_experts, f"Number of experts ({num_experts}) should be less than max number of experts ({max_expert_num})"
-    
+
             self.wg = GAMoEGateT(model_dim, num_experts, max_expert_num=max_expert_num,  fp32_gate=True, adaptive_experts=True, init_t=1.0)
         self.capacity_factor = capacity_factor
         self.eval_capacity_factor = eval_capacity_factor
@@ -610,21 +610,21 @@ class TopKGate(Module):
         self.gate_time = 0.0
         self.drop_tokens = drop_tokens
         self.use_rts = use_rts
-        
+
         # OURS
         self.max_expert_num = max_expert_num
         self.record_routing = False
         self.ep_group = ep_group
         self.total_tokens = None
-        
-    # === OURS === 
+
+    # === OURS ===
     def begin_record_routing(self):
         self.reset_record_routing()
         self.record_routing = True
 
     def end_record_routing(self):
         self.record_routing = False
-    
+
     def reset_record_routing(self):
         if not isinstance(self.wg, GAMoEGateT):
             raise ValueError('Only support GAMoE for record routing!')
@@ -639,7 +639,7 @@ class TopKGate(Module):
 
         if self.wall_clock_breakdown:
             self.timers('TopKGate').start()
-        
+
         # OURS
         if isinstance(self.wg, torch.nn.Linear) and self.wg.weight.dtype != torch.float32:
             self.wg = self.wg.float()
@@ -647,18 +647,18 @@ class TopKGate(Module):
         # input jittering
         if self.noisy_gate_policy == 'Jitter' and self.training:
             input_fp32 = multiplicative_jitter(input_fp32, device=input.device)
-        
+
         # OURS
         if isinstance(self.wg, torch.nn.Linear):
             logits = self.wg(input_fp32)
             top_K = self.k
         else:
             logits, top_K = self.wg(input_fp32)
-            
+
         # Only support our method currently (OURS)
         if self.record_routing:
             assert isinstance(self.wg, GAMoEGateT)
-            
+
             # OURS
             current_routing_records = torch.sum(torch.sign(logits), dim=0)
             if self.routing_records is None:
@@ -670,7 +670,7 @@ class TopKGate(Module):
                 self.total_tokens = logits.shape[0]
             else:
                 self.total_tokens += logits.shape[0]
-            
+
             sample_routing = torch.sum(torch.sign(logits), dim=1)
             samples_not_routing = input_fp32[sample_routing == 0]
             if len(samples_not_routing) > 0:
@@ -681,7 +681,7 @@ class TopKGate(Module):
                     self.sample_records += current_sample_records
             elif self.sample_records is None:
                 self.sample_records = torch.zeros(input_fp32[0].shape).to(input_fp32[0].device)
-        
+
         if self.k == 1:
             gate_output = top1gating(logits, self.capacity_factor if self.training else self.eval_capacity_factor,
                                      self.min_capacity, used_token, self.noisy_gate_policy if self.training else None,
@@ -770,7 +770,7 @@ class MOELayer(Base):
 
         if self.gate.routing_records is None:
             return
-        
+
         routing_records = simple_all_reduce(self.gate.routing_records, self.ep_group)
 
         signed_routing_records = torch.sign(routing_records)
@@ -781,14 +781,14 @@ class MOELayer(Base):
     def add_experts(self):
         assert self.gate.record_routing, "must record routing before adding experts"
         assert isinstance(self.gate.wg, GAMoEGateT), "gate network must have experts mask to allow adaptive process"
-        
-        
+
+
         self.gate.sample_records = simple_all_reduce(self.gate.sample_records, self.ep_group)
-        
+
 
         if sum(self.gate.sample_records) == 0:
             return
-        
+
         normalized_sample_records = self.gate.sample_records / torch.norm(self.gate.sample_records)
 
         # choose one expert that is not active
@@ -798,7 +798,7 @@ class MOELayer(Base):
             self.gate.wg.experts_mask.data[new_expert_index] = 1.0
             self.gate.wg.sim_matrix.data[:, new_expert_index] = normalized_sample_records.data
             self.gate.wg.gates.data[new_expert_index] = torch.tensor(0.0)
-    
+
     def adaptive_update_experts(self):
         # print(self.gates[gate_index].gates)
         before_num = self.gate.wg.expert_num
@@ -807,7 +807,7 @@ class MOELayer(Base):
         self.gate.wg.expert_num = int(sum(self.gate.wg.experts_mask))
         end_num = self.gate.wg.expert_num
         # print('Adaptive update: From {} experts -> {} experts'.format(before_num, end_num))
-        
+
     # === OURS ===
 
     def forward(self, *input: Tensor, **kwargs: Any) -> Tensor:
