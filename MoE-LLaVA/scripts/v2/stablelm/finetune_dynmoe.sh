@@ -8,6 +8,12 @@ max_expert_num=${num_experts}
 use_residual=False
 router_aux_loss_coef=0.01
 
+wandb_project="${WANDB_PROJECT:-dynmoe}"
+wandb_entity="${WANDB_ENTITY:-Implement-DL}"
+wandb_run_group="${WANDB_RUN_GROUP:-stablelm-dynmoe}"
+run_suffix="$(date -u +%Y%m%d-%H%M%S)"
+report_to="${REPORT_TO:-wandb,tensorboard}"
+
 APP="/usr/src/app"
 DATASET_DIR="${APP}/data/raw/MoE-LLaVA-unzipped"
 
@@ -18,8 +24,15 @@ cd "${APP}/DynMoE/MoE-LLaVA"
 uv pip install "../DeepSpeed-0.9.5"
 
 n_gpu=8
+run_name="${RUN_NAME:-stablelm-dynmoe-full-${n_gpu}gpu-${run_suffix}}"
 
-HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 deepspeed --num_gpus=${n_gpu} --enable_each_rank_log ./rank_logs moellava/train/train_mem.py \
+export WANDB_PROJECT="${wandb_project}"
+export WANDB_RUN_GROUP="${wandb_run_group}"
+if [[ -n "${wandb_entity}" ]]; then
+  export WANDB_ENTITY="${wandb_entity}"
+fi
+
+HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run deepspeed --num_gpus=${n_gpu} --enable_each_rank_log ./rank_logs moellava/train/train_mem.py \
     --moe_enable True --num_experts ${num_experts} --max_expert_num ${max_expert_num} --top_k_experts ${top_k_experts} --capacity_factor 1.5 \
     --moe_mode ${moe_mode} --use_residual ${use_residual} --router_aux_loss_coef ${router_aux_loss_coef} \
     --train_modules gate_proj up_proj down_proj wg \
@@ -50,10 +63,12 @@ HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 deepspeed --num_gpus=${n_gpu} --ena
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
+    --logging_first_step True \
     --tf32 True \
     --model_max_length 2048 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
-    --report_to tensorboard \
+    --report_to ${report_to} \
+    --run_name "${run_name}" \
     --cache_dir "./cache_dir"

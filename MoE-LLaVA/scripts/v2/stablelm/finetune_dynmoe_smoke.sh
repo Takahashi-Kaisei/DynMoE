@@ -8,6 +8,12 @@ max_expert_num=${num_experts}
 use_residual=False
 router_aux_loss_coef=0.01
 
+wandb_project="${WANDB_PROJECT:-dynmoe}"
+wandb_entity="${WANDB_ENTITY:-Implement-DL}"
+wandb_run_group="${WANDB_RUN_GROUP:-stablelm-dynmoe}"
+run_suffix="$(date -u +%Y%m%d-%H%M%S)"
+report_to="${REPORT_TO:-wandb}"
+
 APP="/usr/src/app"
 DATASET_DIR="${APP}/data/raw/MoE-LLaVA-unzipped"
 
@@ -18,6 +24,13 @@ cd "${APP}/DynMoE/MoE-LLaVA"
 uv pip install "../DeepSpeed-0.9.5"
 
 n_gpu=8
+run_name="${RUN_NAME:-stablelm-dynmoe-smoke-${n_gpu}gpu-${run_suffix}}"
+
+export WANDB_PROJECT="${wandb_project}"
+export WANDB_RUN_GROUP="${wandb_run_group}"
+if [[ -n "${wandb_entity}" ]]; then
+  export WANDB_ENTITY="${wandb_entity}"
+fi
 
 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run deepspeed --num_gpus=${n_gpu} --enable_each_rank_log ./rank_logs moellava/train/train_mem.py \
   --moe_enable True \
@@ -44,7 +57,7 @@ HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run deepspeed --num_gpus=${n_gpu
   --bf16 True \
   --output_dir ./checkpoints/smoke-dynmoe \
   --num_train_epochs 1 \
-  --max_steps 3 \
+  --max_steps 5 \
   --per_device_train_batch_size 1 \
   --per_device_eval_batch_size 1 \
   --gradient_accumulation_steps 1 \
@@ -55,10 +68,12 @@ HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run deepspeed --num_gpus=${n_gpu
   --warmup_ratio 0.03 \
   --lr_scheduler_type "cosine" \
   --logging_steps 1 \
+  --logging_first_step True \
   --tf32 True \
   --model_max_length 1024 \
   --gradient_checkpointing False \
   --dataloader_num_workers 0 \
   --lazy_preprocess True \
-  --report_to none \
+  --report_to ${report_to} \
+  --run_name "${run_name}" \
   --cache_dir "./cache_dir"
