@@ -9,7 +9,7 @@ We recommend the requirements as follows.
 * CUDA Version >= 11.7
 * **Transformers == 4.37.0**
 * **Tokenizers==0.15.1**
-* Install required packages:
+* Install required packages with [uv](https://docs.astral.sh/uv/):
 ```bash
 cd MoE-LLaVA
 bash setup_moellava.sh
@@ -60,6 +60,32 @@ The DynMoE-customized DeepSpeed install should be run from the DynMoE repository
 > 🚨 We find that using flash attention2 makes performance degradation.
 > </b>
 > </div>
+
+## Docker Inference-Only Setup
+
+For a setup that reproduces the `MoE_LLaVA_StableLM_Colab.ipynb` inference path only, use [`Dockerfile`](./Dockerfile).
+
+- This image is intentionally **inference-only**.
+- It does **not** install `flash-attention`.
+- It is **not** meant for training or finetuning.
+- Build from the DynMoE repository root so both `MoE-LLaVA/` and `DeepSpeed-0.9.5/` are available in the Docker build context.
+
+```bash
+docker build -f MoE-LLaVA/Dockerfile -t dynmoe-moellava-stablelm-infer .
+docker run --rm -it --gpus all dynmoe-moellava-stablelm-infer
+```
+
+Inside the container, run:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+python -c "import deepspeed; print(deepspeed.__version__)"
+python -c "import moellava; print('moellava ok')"
+python -c "import moellava.model.builder; print('builder ok')"
+deepspeed --include localhost:0 moellava/serve/cli.py \
+  --model-path "LanguageBind/MoE-LLaVA-StableLM-1.6B-4e" \
+  --image-file "assets/image.jpg"
+```
 
 ## 🗝️ Training & Validating
 The training & validating instruction is in [TRAIN.md](docs/TRAIN.md) & [EVAL.md](docs/EVAL.md).
