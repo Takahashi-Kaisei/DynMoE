@@ -1,7 +1,14 @@
 .DS_Store
 *__pycache__/
+.hf-cache/
+
+# モデルの中身系
 checkpoints/
 moellava.egg-info/
 openai/
+
+# ログ系
 rank_logs/
+
+# 評価系
 eval/
