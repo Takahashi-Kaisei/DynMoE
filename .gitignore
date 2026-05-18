@@ -12,3 +12,4 @@ rank_logs/
 
 # 評価系
 eval/
+wandb/
