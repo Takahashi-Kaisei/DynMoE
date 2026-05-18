@@ -340,7 +340,6 @@ A100 環境なら offload は不要なので、以下の差し替えがよい。
 に変更するのもあり。
 
 しかし、忠実に再現をしたいなら、`zero2_offload.json`を使ったほうが良いかも。
-上記のエラーはflash-attentionのインストールの過程で治ったし。
 
 ### `model_max_length`
 
@@ -394,6 +393,9 @@ uv pip install "flash-attn==2.3.5" --no-build-isolation
 
 以前は `flash-attn` と `torch` のバージョン乖離があり保留していたが、この組み合わせでは利用できた。
 
+setup_moellava.sh で入れるとエラーが出るけど、手動で入れれば通る。
+なんかpypiへのリクエストが失敗してるっぽかった。ここら辺は注視しておくと良いかも。
+
 ## 動作確認と再現確認
 
 ### smoke test の感触
@@ -427,3 +429,266 @@ uv pip install "flash-attn==2.3.5" --no-build-isolation
 - README のコマンドは、先頭に `uv` を付ければ概ねそのまま回せそう
 - `hf download` を使う前提で進めた方がデータ取得は楽
 - データ置き場は、ローカルコンテナ内に持つ方法と RAID を mount する方法の両方を検討できる
+
+## 学習ロギング方針メモ
+
+### まず取るべき項目
+
+最初の short run では、まず Hugging Face Trainer が標準で出せる項目を `wandb` に流し、
+学習が正常に進んでいるかを確認する。
+
+- `train/loss`
+- `train/learning_rate`
+- `train/epoch`
+- `train/global_step`
+- run 名
+- checkpoint 保存 step
+
+### 次に追加したい項目
+
+full run の前に、次の項目も追加で取りたい。
+
+- `step_time_sec`
+- `samples_per_sec`
+- `tokens_per_sec`
+- `gpu_memory_allocated`
+- `gpu_memory_reserved`
+- `router_aux_loss`
+- `expert_usage`
+- `active_expert_count`
+- `tokens_per_expert`
+- `dead_expert_detected`
+- `add_remove_event`
+- `eta_hours`
+
+### short run での確認観点
+
+- `wandb` に run が作成されるか
+- step 1 から loss が見えるか
+- loss が数 step で極端に発散しないか
+- learning rate が想定どおりに記録されるか
+- local checkpoint / local dataset / flash-attention 経路が落ちずに通るか
+
+## wandb を混ぜた short run 手順
+
+### 事前条件
+
+- `wandb` パッケージが入っていること
+- `wandb login` が済んでいること
+- `Stage2` checkpoint と dataset path が解決済みであること
+
+### 実行例
+
+`MoE-LLaVA` 配下で以下を実行する。
+
+```bash
+cd /usr/src/app/DynMoE/MoE-LLaVA
+uv run wandb login
+bash scripts/v2/stablelm/finetune_dynmoe_smoke.sh
+```
+
+補足:
+
+- smoke script は `max_steps=3` なので、最初の接続確認に向いている
+- `wandb` を確実に確認したいだけなら、最初は smoke で十分
+
+### 確認手順
+
+1. terminal 上で `trainer.train()` まで進み、step ログが出ることを確認する
+2. `wandb` の UI で対象 project に run が作成されていることを確認する
+3. `loss` と `learning_rate` が step ごとに記録されていることを確認する
+4. run 名と run group が意図どおりであることを確認する
+5. smoke が完走したら、次は save あり short run に進む
+
+### 次の一手
+
+smoke で `wandb` 連携が確認できたら、次は full 条件に近い short run を別 script で切る。
+その run では少なくとも次を確認したい。
+
+- `save_strategy=steps` で checkpoint が保存される
+- `zero2_offload.json` 経路で落ちない
+- `train_mem.py + flash-attention` で安定して数十 step 回る
+- `wandb` 上で loss の傾向から full run の所要時間見積もりに必要な基礎ログが取れる
+
+## Next Action Plan
+
+このセクションは、現時点から full finetuning と評価接続まで進めるための実行順を、
+そのまま作業に移せる粒度で固定したもの。
+
+### Step 1. wandb 付き smoke 成功を記録する
+
+目的:
+
+- `train_mem.py + flash-attention + deepspeed + wandb` の疎通確認が完了した状態を固定する
+
+やること:
+
+- 実行日時をメモする
+- 対象 run 名を記録する
+- `wandb` 上で `loss` と `learning_rate` が見えていることを確認する
+- `rank_logs/` の対象 run が全 rank success で終わっていることを確認する
+
+完了条件:
+
+- smoke run が完走
+- `wandb` 上で標準学習ログが見える
+- rank log に致命エラーがない
+
+現状:
+- smoke run 完走
+- wandbでloss, samples/sec step/sec などが見える。いずれもtrain
+- rank logに致命的なエラーはなく、本格的に回していないため他のGPUが休んで、GPU0が忙しそうにしているが問題はなさそう。
+
+### Step 2. save あり short run 用 script を作る
+
+目的:
+
+- full 本番の前に checkpoint 保存と logging を確認できる短時間 run を作る
+
+やること:
+
+- `scripts/v2/stablelm/finetune_dynmoe_short.sh` を新規作成する
+- ベースは `finetune_dynmoe.sh` を使う
+- `max_steps` を 20 から 50 程度にする
+- `save_strategy=steps` を有効にする
+- `save_steps` を小さくする
+- `output_dir` を smoke や full 本番と分ける
+- `REPORT_TO=wandb` を既定にする
+
+完了条件:
+
+- short run 用 script が単体で実行できる
+- output と run 名が他の実験と衝突しない
+
+現状:
+- `finetune_dynmoe_short.sh` を作成
+- `max_steps=20`, `save_strategy=steps`, `save_steps=5` を設定
+- `output_dir` を `./outputs/short_dynmoe` に設定
+- zero2.json を指定。zero2_offload.json だとエラーが起こってしまったため。
+- checkpoint-20というディレクトリができることを確認
+  - この中にptファイル系の一連が入っていることを確認した。
+- zero2_offload.jsonはpendingの判断をする。
+
+### Step 3. resume を検証する
+
+目的:
+
+- 長時間学習前に復旧経路を保証する
+
+やること:
+
+- Step 2 の `output_dir` をそのまま使う
+- 同じ script を再実行する
+- `checkpoint-*` 自動検知で resume に入るか確認する
+- resume 後も loss が不自然に跳ねないか確認する
+
+完了条件:
+
+- `resume_from_checkpoint=True` 経路が動く
+- resume 後に学習が継続する
+
+現状:
+- resumeを明示的にTrueにせずとも、同じチェックポイントが入ったディレクトリでmax_stepを伸ばして実行すればそこからresumeされることがわかった。
+- wandb上では別のrunとして記録されるが、横軸はresumeされた状態であったので成功。
+
+
+### Step 4. 追加 logging 項目の実装方針を固める
+
+目的:
+
+- full run の所要時間見積もりと MoE 挙動監視に必要な指標を決める
+
+やること:
+
+- `wandb` に今すでに出ている項目を整理する
+- 追加したい項目を優先度順に並べる
+- まず callback で足す項目を決める
+
+優先度高:
+
+- `step_time_sec`
+- `samples_per_sec`
+- `tokens_per_sec`
+- `gpu_memory_allocated`
+- `gpu_memory_reserved`
+- `eta_hours`
+
+優先度中:
+
+- `router_aux_loss`
+- `expert_usage`
+- `active_expert_count`
+- `tokens_per_expert`
+
+完了条件:
+
+- 追加 logging 項目の実装順が決まっている
+- どのファイルに callback / logging を入れるか決まっている
+
+### Step 5. full run 前の go/no-go を判定する
+
+目的:
+
+- 本番の長時間実験に進んでよいかを明確に判断する
+
+go 条件:
+
+- smoke は完了済み
+- save あり short run が完了済み
+- resume が確認済み
+- `wandb` の標準ログが安定して見える
+- `zero2_offload.json` 経路で落ちていない
+
+no-go 条件:
+
+- checkpoint 保存が壊れている
+- resume 後に loss が破綻する
+- W&B run が途中で止まる
+- rank log に OOM / NaN / recurrent error が出る
+
+### Step 6. full finetuning を実行する
+
+目的:
+
+- StableLM DynMoE full finetuning を 1 回完走させる
+
+やること:
+
+- `finetune_dynmoe.sh` を本番設定で実行する
+- `wandb` 上で loss 推移と step 進行を監視する
+- checkpoint rotation と disk 使用量を確認する
+- 必要なら保存間隔や log 頻度を微調整する
+
+完了条件:
+
+- full run が最後まで完走する
+- 最終 checkpoint が出力される
+
+### Step 7. 評価導線へ接続する
+
+目的:
+
+- 学習済み checkpoint を benchmark 評価につなぐ
+
+やること:
+
+- `docs/EVAL.md` に沿って `CKPT_NAME` を差し替える
+- まず `ScienceQA` を回す
+- 次に `MME`, `SEED` へ広げる
+- 結果の保存先と比較表の形式を固定する
+
+完了条件:
+
+- 学習済み checkpoint から少なくとも 1 benchmark の評価が通る
+
+### 実行順の要約
+
+1. smoke 成功を記録する
+2. save あり short run 用 script を作る
+3. save あり short run を回す
+4. resume を確認する
+5. 追加 logging の実装方針を決める
+6. full run の go/no-go を判定する
+7. full finetuning を実行する
+8. 評価へ接続する
+
